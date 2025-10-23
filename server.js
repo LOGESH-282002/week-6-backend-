@@ -1,76 +1,115 @@
+/**
+ * Main Express Server Configuration
+ * 
+ * This file sets up the Express.js server with middleware, routes, and error handling.
+ * It provides a RESTful API for managing posts with consistent response formatting.
+ * 
+ * Features:
+ * - CORS configuration for cross-origin requests
+ * - Request logging for debugging
+ * - JSON parsing with size limits
+ * - Centralized error handling
+ * - Health check endpoint
+ * 
+ * @author Your Name
+ * @version 1.0.0
+ */
+
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { createClient } from '@supabase/supabase-js';
+import apiRoutes from './routes/index.js';
+import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
+// Load environment variables from .env file
 dotenv.config();
 
+// Create Express application instance
 const app = express();
-app.use(cors());
-app.use(express.json());
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+/**
+ * CORS Middleware Configuration
+ * 
+ * Configures Cross-Origin Resource Sharing to allow requests from the frontend.
+ * Uses environment variable FRONTEND_URL or defaults to Vite dev server port.
+ */
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true // Allow cookies and authorization headers
+}));
 
-app.get('/api/posts', async (req, res) => {
-  const {
-    page = 1,
-    limit = 10,
-    search = ''
-  } = req.query;
+/**
+ * Body Parsing Middleware
+ * 
+ * Configures Express to parse JSON and URL-encoded request bodies.
+ * Sets a 10MB limit to handle larger payloads if needed.
+ */
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
 
-  const offset = (page - 1) * limit;
-
-  try {
-    
-    let query = supabase
-      .from('posts')
-      .select('id, title, body, user_id', { count: 'exact' });
-
-    if (search.trim()) {
-      query = query.or(`title.ilike.%${search}%,body.ilike.%${search}%`);
-    }
-
-    query = query
-      .range(offset, offset + parseInt(limit) - 1)
-      .order('id', { ascending: false });
-
-    const { data, error, count } = await query;
-
-    if (error) return res.status(400).json({ error: error.message });
-
-    const totalPages = Math.ceil(count / limit);
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
-
-    res.json({
-      posts: data,
-      pagination: {
-        currentPage: parseInt(page),
-        totalPages,
-        totalPosts: count,
-        hasNextPage,
-        hasPrevPage,
-        limit: parseInt(limit)
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
-  }
+/**
+ * Request Logging Middleware
+ * 
+ * Logs all incoming requests with timestamp, method, and path.
+ * Useful for debugging and monitoring API usage.
+ * 
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
 });
 
-app.post('/api/posts', async (req, res) => {
-  const { title, body, user_id } = req.body;
-  const { data, error } = await supabase
-    .from('posts')
-    .insert([{ title, body, user_id }])
-    .select();
+/**
+ * API Routes
+ * 
+ * Mounts all API routes under the '/api' prefix.
+ * Routes are organized in separate modules for better maintainability.
+ */
+app.use('/api', apiRoutes);
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data[0]);
+/**
+ * Root Endpoint
+ * 
+ * Provides a health check endpoint that returns server status and version info.
+ * Useful for monitoring and verifying the server is running.
+ * 
+ * @route GET /
+ * @returns {Object} JSON response with server status
+ */
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    data: {
+      message: 'API Server is running',
+      version: '1.0.0',
+      timestamp: new Date().toISOString()
+    },
+    error: null
+  });
 });
 
+/**
+ * Error Handling Middleware
+ * 
+ * These middleware functions handle 404 errors and other unhandled errors.
+ * They must be registered last to catch all unhandled requests and errors.
+ */
+app.use(notFoundHandler);
+app.use(errorHandler);
+
+// Server configuration
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+/**
+ * Start the Express Server
+ * 
+ * Starts the server on the specified port and logs startup information.
+ * The server will listen for incoming HTTP requests on all network interfaces.
+ */
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
+});
