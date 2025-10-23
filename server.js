@@ -30,11 +30,29 @@ const app = express();
 /**
  * CORS Middleware Configuration
  * 
- * Configures Cross-Origin Resource Sharing to allow requests from the frontend.
- * Uses environment variable FRONTEND_URL or defaults to Vite dev server port.
+ * Configures Cross-Origin Resource Sharing to allow requests from multiple environments.
+ * Supports both development (localhost) and production (Vercel) origins.
  */
+const allowedOrigins = [
+  'http://localhost:5173',           // Local development (Vite)
+  'http://localhost:3000',           // Local development (React)
+  'https://week-6-frontend.vercel.app', // Production frontend
+  process.env.FRONTEND_URL           // Custom environment URL
+].filter(Boolean); // Remove any undefined values
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl requests, or same-origin)
+    if (!origin) return callback(null, true);
+    
+    // Check if the origin is in our allowed list
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log(`CORS blocked origin: ${origin}`);
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
   credentials: true // Allow cookies and authorization headers
 }));
 
